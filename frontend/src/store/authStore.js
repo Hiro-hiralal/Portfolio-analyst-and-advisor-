@@ -12,8 +12,9 @@ const useAuthStore = create((set) => ({
     set({ loading: true, error: null })
     try {
       const response = await authAPI.login({ email, password })
-      const { access_token } = response.data
+      const { access_token, refresh_token } = response.data
       localStorage.setItem('token', access_token)
+      localStorage.setItem('refresh_token', refresh_token)
 
       // Get user data
       const userResponse = await authAPI.getMe()
@@ -50,6 +51,7 @@ const useAuthStore = create((set) => ({
 
   logout: () => {
     localStorage.removeItem('token')
+    localStorage.removeItem('refresh_token')
     set({
       user: null,
       token: null,

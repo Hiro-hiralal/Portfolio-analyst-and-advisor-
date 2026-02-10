@@ -3,7 +3,13 @@ from fastapi import HTTPException, status
 from datetime import timedelta
 from app.models.user import User
 from app.models.schemas import UserCreate, Token
-from app.core.security import verify_password, get_password_hash, create_access_token
+from app.core.security import (
+    verify_password,
+    get_password_hash,
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+)
 from app.core.config import settings
 
 
@@ -56,12 +62,44 @@ class AuthService:
 
     @staticmethod
     def create_token(user: User) -> Token:
-        """Create access token for user"""
+        """Create access and refresh tokens for user"""
+        token_data = {"sub": user.email}
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": user.email}, expires_delta=access_token_expires
+            data=token_data, expires_delta=access_token_expires
         )
-        return Token(access_token=access_token, token_type="bearer")
+        refresh_token = create_refresh_token(data=token_data)
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+        )
+
+    @staticmethod
+    def refresh_access_token(refresh_token_str: str, db: Session) -> Token:
+        """Validate a refresh token and issue new access + refresh tokens"""
+        payload = decode_access_token(refresh_token_str)
+        if payload is None or payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            )
+
+        email: str = payload.get("sub")
+        if email is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            )
+
+        user = db.query(User).filter(User.email == email).first()
+        if user is None or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+            )
+
+        return AuthService.create_token(user)
 
     @staticmethod
     def get_current_user(db: Session, email: str) -> User:
